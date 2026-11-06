@@ -30,3 +30,7 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[[example]]
+name = "start"
+required-features = ["process"]

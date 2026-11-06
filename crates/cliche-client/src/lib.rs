@@ -11,3 +11,6 @@ pub use client::{Client, ClientBuilder, ReconnectPolicy};
 
 pub mod commands;
 pub use commands::{CreateInvoiceParams, PayInvoiceParams};
+
+#[cfg(feature = "process")]
+pub mod process;

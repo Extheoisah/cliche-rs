@@ -17,7 +17,11 @@
 4. Helpers/examples: complete. MVP command helpers validate params, preserve
    exact wire casing and optional fields, and return JSON. Rust attach/typed-event
    examples compile. Wire tests include monetary integers above 2^53.
-5. Optional process management: pending.
+5. Optional process management: complete. Native/JAR launch, dedicated-directory
+   ownership lock, busy-port preflight, bounded readiness, drained pipes, exit
+   monitoring and terminate/kill/reap. Fake-child tests cover pipe pressure, early
+   exit, timeout, cancellation, duplicate ownership and occupied ports. All-feature
+   tests and Clippy pass on macOS; actual Linux/Nix signaling remains unverified.
 6. gRPC gateway/Node example: pending.
 7. Compatibility/release checks: pending. Live Nix compatibility needs an isolated
    Linux/Nix environment; source review is not live verification.

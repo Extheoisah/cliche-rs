@@ -62,8 +62,8 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 Tests use disposable local mock servers, never your running wallet. The `tls`
-feature enables `wss://`; it is disabled by default. The process supervisor and
-gRPC gateway are tracked in the remaining milestones.
+feature enables `wss://`; it is disabled by default. The `process` feature enables native/JAR supervision. gRPC is tracked in the
+remaining milestones.
 
 ## Design and progress
 
@@ -77,3 +77,24 @@ Source-reviewed compatibility is pinned in PROTOCOL.md; live Nix compatibility
 has not yet been verified. cliche's WebSocket broadcasts wallet-wide replies and
 events; keep it on a trusted private interface. Debug output redacts event payloads,
 but explicitly serialized JSON contains secrets such as payment preimages.
+
+## Managed cliche
+
+```sh
+cargo run -p cliche-client --features process --example start -- \
+  /path/to/cliche-nix/result/bin/cliche /path/to/dedicated-data 12001 testnet
+```
+
+Use `process::{ProcessConfig, ManagedCliche}` to launch a native binary or JAR.
+Configure the seed in the data directory out of band. The manager never runs Nix,
+installs cliche, or reads seed/database files. It retains stdin and drains/discards
+stdout/stderr because diagnostic output can contain secrets. Call `shutdown()`
+to terminate and reap the child; drop signals best-effort cleanup while the Tokio
+runtime is alive. Cloning the client does not keep the owned process alive.
+
+The supervisor binds cliche to IPv4 loopback, rejects occupied ports, and locks
+its data directory against other SDK managers. cliche itself does not honor that
+lock; unrelated processes can still race startup. Use a dedicated port/directory
+and optional expected pubkey. Never run two instances against the same wallet.
+On Unix shutdown sends SIGTERM, then force-kills after the configured grace period;
+other platforms use forceful termination. No wallet-level shutdown RPC is assumed.
