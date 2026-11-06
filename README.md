@@ -62,8 +62,8 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 Tests use disposable local mock servers, never your running wallet. The `tls`
-feature enables `wss://`; it is disabled by default. The `process` feature enables native/JAR supervision. gRPC is tracked in the
-remaining milestones.
+feature enables `wss://`; it is disabled by default. The `process` feature enables native/JAR supervision. The gateway is a separate
+crate; direct client users do not build its gRPC stack.
 
 ## Design and progress
 
@@ -98,3 +98,39 @@ lock; unrelated processes can still race startup. Use a dedicated port/directory
 and optional expected pubkey. Never run two instances against the same wallet.
 On Unix shutdown sends SIGTERM, then force-kills after the configured grace period;
 other platforms use forceful termination. No wallet-level shutdown RPC is assumed.
+
+## gRPC gateway and Node
+
+The gateway build requires `protoc` (e.g. `protobuf-compiler` on Debian or
+`protobuf` in Homebrew). The client crate has no protoc dependency.
+
+```sh
+cargo run -p cliche-gateway -- --cliche-url ws://127.0.0.1:12000/ --listen 127.0.0.1:12001
+# Explicitly allow payment initiation if your application needs it:
+cargo run -p cliche-gateway -- --allow-methods ping,get-info,create-invoice,pay-invoice,check-payment,list-payments
+```
+
+The default method allowlist is read-only; `--allow-methods '*'` grants full
+command access. Set `CLICHE_GATEWAY_TOKEN` for bearer authentication. Event access
+is wallet-wide and separately disabled with `--disable-events`; method allowlists
+do not provide tenant isolation for events. The standalone server exposes standard
+gRPC health at service name `cliche.v1.ClicheService`. Health reports connection
+readiness, not channel liquidity or settlement readiness.
+
+The gateway supports `Call`, `GetStatus`, and streaming `SubscribeEvents` using
+[the protobuf contract](crates/cliche-gateway/proto/cliche/v1/cliche.proto).
+Responses/events are JSON documents inside protobuf strings. Upstream errors are
+JSON application envelopes; gateway errors are gRPC statuses with JSON details
+where generated locally. Client/proxy deadline failures may omit these details.
+A stalled event stream terminates with RESOURCE_EXHAUSTED; resubscribe and reconcile.
+
+[The Node example](examples/node/README.md) includes bearer metadata, streaming,
+and lossless JSON handling. To launch owned cliche from the gateway, use
+`--executable PATH --data-dir PATH --cliche-port PORT --network testnet`.
+No RPC accepts executable paths or remotely starts arbitrary processes.
+
+Plain gRPC binds to loopback by default. For nonloopback binds the CLI requires
+`--trusted-proxy` and a nonempty token: supply TLS termination/access controls
+in the deployment proxy and keep its backend network private. Direct server TLS
+and reflection are not implemented. The embeddable `Gateway` service can be added
+to a caller-configured Tonic server; its caller owns transport security.

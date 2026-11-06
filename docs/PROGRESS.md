@@ -22,6 +22,10 @@
    monitoring and terminate/kill/reap. Fake-child tests cover pipe pressure, early
    exit, timeout, cancellation, duplicate ownership and occupied ports. All-feature
    tests and Clippy pass on macOS; actual Linux/Nix signaling remains unverified.
-6. gRPC gateway/Node example: pending.
+6. gRPC gateway/Node example: complete. Separate tonic/prost crate with JSON
+   command results, typed-event serialization, bearer auth, method/event policy,
+   deadline details, bounded subscriptions, stall termination and health. Real
+   HTTP/2 tests cover concurrent callers, integer precision, auth and timeouts.
+   Node lossless parser and mock-backed gRPC roundtrip tested separately.
 7. Compatibility/release checks: pending. Live Nix compatibility needs an isolated
    Linux/Nix environment; source review is not live verification.

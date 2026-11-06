@@ -1,0 +1,30 @@
+[package]
+name = "cliche-gateway"
+description = "gRPC gateway for the cliche WebSocket client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cliche-client = { path = "../cliche-client", version = "0.1.0", features = ["process", "tls"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros"] }
+tonic = { version = "0.14", features = ["transport"] }
+tonic-prost = "0.14"
+prost = "0.14"
+tonic-health = "0.14"
+async-stream = "0.3"
+futures-util.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+subtle = "2"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[dev-dependencies]
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-tungstenite.workspace = true
+
+[lints]
+workspace = true

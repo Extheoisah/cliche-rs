@@ -7,3 +7,4 @@
 /data/
 *.sqlite
 *.sqlite-*
+node_modules/
