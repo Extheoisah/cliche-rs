@@ -84,6 +84,11 @@ pub struct ManagedCliche {
     client: Client,
     owner: Owner,
 }
+impl Drop for ManagedCliche {
+    fn drop(&mut self) {
+        self.client.begin_close();
+    }
+}
 impl ManagedCliche {
     /// Start cliche, retain its stdin, discard/drain diagnostics, and verify ping.
     /// Cancelling this future signals child shutdown. Never adopts an existing node.
@@ -119,8 +124,10 @@ impl ManagedCliche {
             Launch::Native { executable } => Command::new(executable),
             Launch::Jar { java, .. } => Command::new(java),
         };
+        let mut data_property = std::ffi::OsString::from("-Dcliche.datadir=");
+        data_property.push(config.data_dir.as_os_str());
         command
-            .arg(format!("-Dcliche.datadir={}", config.data_dir.display()))
+            .arg(data_property)
             .arg("-Dcliche.websocket.host=127.0.0.1")
             .arg(format!("-Dcliche.websocket.port={}", config.port))
             .arg(format!("-Dcliche.network={}", config.network))

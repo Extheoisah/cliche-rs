@@ -5,10 +5,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme = "README.md"
 
 [features]
 default = []
-tls = ["tokio-tungstenite/rustls-tls-webpki-roots"]
+tls = ["tokio-tungstenite/rustls-tls-webpki-roots", "dep:rustls", "dep:webpki-roots"]
 process = ["tokio/process", "tokio/io-util", "dep:fs2", "dep:nix"]
 
 [dependencies]
@@ -19,6 +20,8 @@ tokio-tungstenite.workspace = true
 futures-util.workspace = true
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }
 fs2 = { version = "0.4", optional = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -27,6 +30,8 @@ nix = { version = "0.30", default-features = false, features = ["signal"], optio
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util", "io-util"] }
 tempfile = "3"
+rcgen = { version = "0.14", default-features = false, features = ["ring", "crypto"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [lints]
 workspace = true

@@ -69,7 +69,8 @@ fn config(mode: &str, dir: &tempfile::TempDir) -> ProcessConfig {
     let port = listener.local_addr().unwrap().port();
     let mut config = ProcessConfig::native(path, dir.path().join("data"));
     config.port = port;
-    config.startup_timeout = Duration::from_secs(3);
+    // macOS may delay first execution while assessing a freshly linked binary.
+    config.startup_timeout = Duration::from_secs(10);
     config.shutdown_grace = Duration::from_millis(50);
     config
 }
@@ -93,7 +94,9 @@ async fn starts_drains_keeps_stdin_and_stops_only_owned_child() {
     let dir = tempfile::tempdir().unwrap();
     let config = config("ready", &dir);
     let data_dir = config.data_dir.clone();
-    let managed = ManagedCliche::start(config.clone()).await.unwrap();
+    let managed = ManagedCliche::start(config.clone())
+        .await
+        .unwrap_or_else(|e| panic!("startup failed: {}", e.message));
     assert_eq!(managed.client().ping().await.unwrap()["ping"], "pong");
     assert!(ManagedCliche::start(config).await.is_err());
     managed.shutdown().await;
@@ -104,7 +107,11 @@ async fn startup_exit_timeout_and_cancellation_release_ownership() {
     for mode in ["exit", "hang"] {
         let dir = tempfile::tempdir().unwrap();
         let mut config = config(mode, &dir);
-        config.startup_timeout = Duration::from_millis(100);
+        config.startup_timeout = if mode == "exit" {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_millis(100)
+        };
         let data_dir = config.data_dir.clone();
         let error = match ManagedCliche::start(config).await {
             Ok(_) => panic!("unexpected ready"),
@@ -136,4 +143,19 @@ async fn busy_port_is_never_adopted() {
     config.port = listener.local_addr().unwrap().port();
     assert!(ManagedCliche::start(config).await.is_err());
     assert!(listener.local_addr().is_ok());
+}
+
+#[tokio::test]
+async fn dropping_owner_closes_client_clones_and_releases_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = config("ready", &dir);
+    let data_dir = config.data_dir.clone();
+    let managed = ManagedCliche::start(config)
+        .await
+        .unwrap_or_else(|e| panic!("startup failed: {}", e.message));
+    let client = managed.client().clone();
+    drop(managed);
+    assert!(client.ping().await.is_err());
+    wait_unlocked(&data_dir).await;
+    client.close().await;
 }

@@ -23,16 +23,46 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
         let limits = WebSocketConfig::default()
             .max_message_size(Some(config.max_message_size))
             .max_frame_size(Some(config.max_message_size));
-        let (mut socket, _) =
+        #[cfg(feature = "tls")]
+        let connected = {
+            let connector = if config.endpoint.starts_with("wss://") {
+                let tls = match &config.tls_config {
+                    Some(config) => config.clone(),
+                    None => Arc::new(
+                        rustls::ClientConfig::builder_with_provider(Arc::new(
+                            rustls::crypto::ring::default_provider(),
+                        ))
+                        .with_safe_default_protocol_versions()
+                        .map_err(|_| Error::invalid("TLS protocol configuration failed"))?
+                        .with_root_certificates(rustls::RootCertStore::from_iter(
+                            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+                        ))
+                        .with_no_client_auth(),
+                    ),
+                };
+                Some(tokio_tungstenite::Connector::Rustls(tls))
+            } else {
+                None
+            };
+            tokio_tungstenite::connect_async_tls_with_config(
+                &config.endpoint,
+                Some(limits),
+                false,
+                connector,
+            )
+            .await
+        };
+        #[cfg(not(feature = "tls"))]
+        let connected =
             tokio_tungstenite::connect_async_with_config(&config.endpoint, Some(limits), false)
-                .await
-                .map_err(|_| {
-                    Error::new(
-                        ErrorKind::Connection,
-                        "websocket handshake failed",
-                        Execution::NotSent,
-                    )
-                })?;
+                .await;
+        let (mut socket, _) = connected.map_err(|_| {
+            Error::new(
+                ErrorKind::Connection,
+                "websocket handshake failed",
+                Execution::NotSent,
+            )
+        })?;
         let id = uuid::Uuid::new_v4().to_string();
         socket
             .send(Message::Text(
@@ -255,9 +285,21 @@ async fn session(
             _ = &mut writer => { writer_completed = true; break; },
             frame = stream.next() => match frame {
                 Some(Ok(Message::Text(text))) => match protocol::parse(&text) {
-                    Incoming::Reply(id, result) => { if let Some(pending) = state.lock().pending.remove(&id) { let _ = pending.reply.send(result); } }
-                    Incoming::Event(record) => { let _ = state.events.send(record); }
-                    Incoming::Invalid => { let _ = state.events.send(EventRecord::InvalidNotification { error: crate::events::EventDecodeError { method: String::new(), reason: crate::events::DecodeReason::InvalidEnvelope } }); }
+                    Incoming::Reply(id, result) => {
+                        if let Some(pending) = state.lock().pending.remove(&id) {
+                            let _ = pending.reply.send(result);
+                        }
+                    }
+                    Incoming::Event(record) => {
+                        let _ = state.events.send(record);
+                    }
+                    Incoming::Invalid => {
+                        let error = crate::events::EventDecodeError {
+                            method: String::new(),
+                            reason: crate::events::DecodeReason::InvalidEnvelope,
+                        };
+                        let _ = state.events.send(EventRecord::InvalidNotification { error });
+                    }
                 },
                 Some(Ok(Message::Ping(_) | Message::Pong(_))) => {},
                 _ => break,

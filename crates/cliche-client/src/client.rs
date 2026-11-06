@@ -90,6 +90,8 @@ pub struct Client {
 #[derive(Clone)]
 pub struct ClientBuilder {
     pub(crate) endpoint: String,
+    #[cfg(feature = "tls")]
+    pub(crate) tls_config: Option<Arc<rustls::ClientConfig>>,
     pub(crate) reconnect: Option<ReconnectPolicy>,
     pub(crate) expected_pubkey: Option<String>,
     pub(crate) expected_chain: Option<String>,
@@ -119,6 +121,14 @@ impl Default for ReconnectPolicy {
     }
 }
 impl ClientBuilder {
+    /// Custom TLS trust/client-auth configuration for private wss deployments.
+    /// The default uses WebPKI roots and an explicit ring provider, without global state.
+    #[cfg(feature = "tls")]
+    pub fn tls_config(mut self, config: Arc<rustls::ClientConfig>) -> Self {
+        self.tls_config = Some(config);
+        self
+    }
+
     /// Retry lost connections without replaying any command. Disabled by default.
     pub fn reconnect(mut self, policy: ReconnectPolicy) -> Self {
         self.reconnect = Some(policy);
@@ -246,6 +256,8 @@ impl Client {
     pub fn builder(endpoint: impl Into<String>) -> ClientBuilder {
         ClientBuilder {
             endpoint: endpoint.into(),
+            #[cfg(feature = "tls")]
+            tls_config: None,
             reconnect: None,
             expected_pubkey: None,
             expected_chain: None,
@@ -332,6 +344,13 @@ impl Client {
         let (reply, receiver) = oneshot::channel();
         let (id, writer) = {
             let mut shared = self.inner.state.lock();
+            if self.inner.state.stopping.load(Ordering::SeqCst) {
+                return Err(Error::new(
+                    ErrorKind::Closed,
+                    "client closed",
+                    Execution::NotSent,
+                ));
+            }
             let active = shared.active.as_mut().ok_or_else(|| {
                 Error::new(
                     ErrorKind::Connection,
@@ -389,11 +408,14 @@ impl Client {
     }
     /// Close the connection for every clone and wait for socket tasks to stop.
     pub async fn close(&self) {
+        self.begin_close();
+        let mut finished = self.inner.finished.clone();
+        let _ = finished.wait_for(|done| *done).await;
+    }
+    pub(crate) fn begin_close(&self) {
         self.inner.state.stopping.store(true, Ordering::SeqCst);
         self.inner.permits.close();
         self.inner.stop.send_replace(true);
-        let mut finished = self.inner.finished.clone();
-        let _ = finished.wait_for(|done| *done).await;
     }
 }
 struct PendingGuard<'a> {
