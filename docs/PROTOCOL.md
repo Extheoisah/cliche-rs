@@ -1,7 +1,8 @@
 # Protocol findings
 
 Inspected on 2026-11-06. Findings below come from source, not a live wallet session.
-No connection was made to the user's running instance and no wallet data was read.
+The original inspection used source only. Subsequent read-only live attachment
+tests are recorded in COMPATIBILITY.md; no wallet databases/configuration were read.
 
 ## Revisions and evidence
 
@@ -117,7 +118,8 @@ as the primary decoder: the inspected renderer uses `method` and `params`.
 
 `ready` is published once after a three-second scheduled delay after initialization.
 It is not replayed for new connections and is not proof that channel synchronization
-or payments are usable. Attach/readiness should use a correlated `ping`, with
+or payments are usable. Attach/readiness uses a correlated `ping` (internal probes may repeat within the
+connect deadline to tolerate output-subscription startup), with
 optional `get-info` identity/network validation. Events begin only after subscription;
 never claim to deliver events that occurred before connecting.
 

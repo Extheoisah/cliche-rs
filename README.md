@@ -75,8 +75,9 @@ crate; direct client users do not build its gRPC stack.
 - [Contributing](CONTRIBUTING.md)
 
 Crate names are provisional and have not been checked for registry availability.
-Source-reviewed compatibility is pinned in PROTOCOL.md; live Nix compatibility
-has not yet been verified. cliche's WebSocket broadcasts wallet-wide replies and
+Source-reviewed compatibility is pinned in PROTOCOL.md. Read-only attachment to
+the user-provided running instance is verified; managed Nix/Linux execution is
+still unverified. cliche's WebSocket broadcasts wallet-wide replies and
 events; keep it on a trusted private interface. Debug output redacts event payloads,
 but explicitly serialized JSON contains secrets such as payment preimages.
 
@@ -145,4 +146,4 @@ python3 scripts/check-packages.py --offline
 
 This assembles both packages, checks archive contents, and compiles unpacked
 sources together without publishing. See the compatibility notes for the Cargo
-1.94 offline workspace verification issue and the remaining live Nix release gate.
+1.94 offline workspace verification issue and the remaining managed Nix/Linux release gate.

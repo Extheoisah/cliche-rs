@@ -10,10 +10,34 @@ on macOS/Windows; those hosted CI runs have not occurred yet.
 | cliche `75ac2cadc77290127781c345cea823b13957320d` | Source-reviewed protocol; synthetic fixtures and mock integration tested |
 | go-cliche `f2a5e32695ac6d76b3d3ea75cb89af7b492153d8` | Event schema compared against actual cliche source; optional differences retained |
 | Local cliche-nix HEAD `00e9d8e12a14f01205e10ef6e3d450a954bddbfc` | Lockfile/patches reviewed; same cliche revision, no API patches found |
-| Actual Nix native binary on Linux | Not live-tested; Nix/executable unavailable on this macOS host |
+| User-reported Nix cliche at `ws://127.0.0.1:12000/` | Read-only live attachment tested from this macOS host; binary revision/host provenance not independently verified |
+| Managed Nix native binary on Linux | Not live-tested; no local Nix/executable available for isolated process tests |
 | Mock WebSocket and verified local TLS | Tested, including readiness, heartbeat, identity mismatch, limits, disconnect and reconnect |
 | Owned mock subprocess on macOS | Tested with pipe pressure, termination escalation, drop/cancellation, timeout, early exit and locks |
 | Real gRPC HTTP/2 and Node client | Tested against mock cliche, including monetary integers above 2^53 |
+
+## Live attachment result
+
+On 2026-11-06 the user authorized read-only tests against their running endpoint
+at `ws://127.0.0.1:12000/`. The library passed ping/get-info, identity consistency
+checks using observed pubkey/chain values, and 32 concurrent pings distributed
+across two clients. Closing one attached client left the other client and cliche
+usable. Wallet responses were not printed or stored as fixtures.
+
+Initial repeated connection tests exposed intermittent readiness timeouts. The
+server starts input handling and its output-topic subscription independently, so
+a reply can plausibly precede subscription. Bounded retries of the internal
+side-effect-free readiness ping fixed the observed failure; the precise upstream
+scheduling cause was inferred from source rather than instrumented inside cliche.
+A deterministic mock test drops the first probe response to cover this behavior.
+Application commands are still never replayed. Timeout errors distinguish
+handshake, readiness, and identity-check stages.
+
+This verifies WebSocket attachment to the provided instance, not its binary
+provenance, Linux process supervision, or actual payment/LNURL notifications.
+Payment events remain covered by pinned source fixtures and mock integration tests.
+No invoices, payments, channel changes, restarts, or wallet database reads were
+performed.
 
 ## Run the opt-in smoke checks
 
@@ -23,7 +47,7 @@ Do not log get-info output if it contains wallet-sensitive fields.
 
 ```sh
 CLICHE_TEST_URL=ws://127.0.0.1:12000/ \
-  cargo test -p cliche-client --test live read_only_live_cliche_smoke -- --ignored
+  cargo test -p cliche-client --test live read_only_live -- --ignored
 ```
 
 Optionally set CLICHE_TEST_PUBKEY and CLICHE_TEST_CHAIN to validate identity.

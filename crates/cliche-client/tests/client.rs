@@ -176,3 +176,30 @@ async fn identity_mismatch_and_message_limits_are_enforced() {
     client.close().await;
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn readiness_recovers_when_output_subscription_misses_first_ping() {
+    let (listener, endpoint) = listener().await;
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let first = request(&mut socket).await;
+        assert_eq!(first["method"], "ping");
+        // Simulate upstream publishing before this socket's topic subscription.
+        let second = request(&mut socket).await;
+        assert_eq!(second["method"], "ping");
+        respond(&mut socket, &second, json!({"ping":"pong"})).await;
+        let command = request(&mut socket).await;
+        assert_eq!(command["method"], "once-only");
+        respond(&mut socket, &command, json!(true)).await;
+        let _ = futures_util::StreamExt::next(&mut socket).await;
+    });
+    let client = Client::builder(endpoint)
+        .connect_timeout(Duration::from_secs(2))
+        .connect()
+        .await
+        .unwrap();
+    assert_eq!(client.call("once-only", json!({})).await.unwrap(), true);
+    client.close().await;
+    server.await.unwrap();
+}

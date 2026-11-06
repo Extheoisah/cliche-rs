@@ -170,7 +170,9 @@ impl ClientBuilder {
         self.max_message_size = bytes;
         self
     }
-    /// Connect and verify a correlated cliche `ping`. Never waits for `ready`.
+    /// Connect and verify a correlated cliche `ping`. Internal readiness probes
+    /// may repeat until the connect deadline; application commands never replay.
+    /// Never waits for the one-shot `ready` event.
     pub async fn connect(self) -> Result<Client, Error> {
         self.validate()?;
         let socket = crate::connection::open(&self).await?;

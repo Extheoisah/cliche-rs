@@ -35,10 +35,17 @@
    Archive content checks and unpacked-source compilation pass. Cargo 1.94's
    offline workspace verifier hit a temporary-registry checksum bug; a repeatable
    local-patch package checker covers both unpacked crates instead.
-   Live Nix/Linux/JAR checks, hosted CI runs, final registry names/repository URLs,
+   Managed Nix/Linux/JAR checks, hosted CI runs, final registry names/repository URLs,
    and publication remain open release gates (COMPATIBILITY.md). Nothing published.
 
 Final validation also fixed explicit TLS crypto-provider selection (tested trusted
 and untrusted local certificates) and immediately stops shared clients when managed
 ownership drops. Fixture startup allows macOS first-execution assessment time.
 Runtime refinements and unsupported options are listed in COMPATIBILITY.md.
+
+Read-only live attachment update (2026-11-06): ping/get-info and two-client
+identity/concurrency checks passed against the user-provided localhost:12000
+instance. Initial connection timeouts led to bounded internal readiness-ping
+retries, with a regression test for a lost first reply. Application calls remain
+non-replayed. Actual binary provenance, managed Nix execution and payment-event
+emission are separate unverified checks; see COMPATIBILITY.md.

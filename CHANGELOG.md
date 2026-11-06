@@ -14,5 +14,9 @@
 - Protocol fixtures, mock integration tests, feature CI, opt-in live smoke tests,
   source compatibility notes and a reproducible local footprint baseline.
 
-Not yet published. Live Nix/JAR and hosted cross-platform validation remain
-release gates; see docs/COMPATIBILITY.md. No real-wallet tests were run.
+Read-only live attachment and concurrent-client checks passed against the
+user-provided instance. Internal readiness probes retry within the connect deadline
+to tolerate a missed first broadcast reply; application calls are never replayed.
+
+Not yet published. Managed Nix/JAR and hosted cross-platform validation remain
+release gates; see docs/COMPATIBILITY.md. No wallet-mutating tests were run.

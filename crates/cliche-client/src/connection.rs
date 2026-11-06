@@ -19,6 +19,7 @@ use tokio_tungstenite::{
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
+    let stage = std::sync::atomic::AtomicU8::new(0);
     let operation = async {
         let limits = WebSocketConfig::default()
             .max_message_size(Some(config.max_message_size))
@@ -63,24 +64,31 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
                 Execution::NotSent,
             )
         })?;
+        stage.store(1, std::sync::atomic::Ordering::Relaxed);
         let id = uuid::Uuid::new_v4().to_string();
-        socket
-            .send(Message::Text(
-                json!({"jsonrpc":"2.0","id":id,"method":"ping","params":{}})
-                    .to_string()
-                    .into(),
-            ))
-            .await
-            .map_err(|_| {
-                Error::new(
-                    ErrorKind::Connection,
-                    "readiness write failed",
-                    Execution::NotSent,
-                )
-            })?;
-        while let Some(frame) = socket.next().await {
+        let probe = Message::Text(
+            json!({"jsonrpc":"2.0","id":id,"method":"ping","params":{}})
+                .to_string()
+                .into(),
+        );
+        // cliche begins consuming input and subscribing to its output topic
+        // independently. An immediate reply can be published before this socket
+        // subscribes. Only this internal, side-effect-free readiness probe is
+        // repeated, bounded by connect_timeout; application calls are never retried.
+        let mut retry = tokio::time::interval(std::time::Duration::from_millis(250));
+        retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            let frame = tokio::select! {
+                _ = retry.tick() => {
+                    socket.send(probe.clone()).await.map_err(|_| {
+                        Error::new(ErrorKind::Connection, "readiness write failed", Execution::NotSent)
+                    })?;
+                    continue;
+                }
+                frame = socket.next() => frame,
+            };
             match frame {
-                Ok(Message::Text(text)) => {
+                Some(Ok(Message::Text(text))) => {
                     if let Incoming::Reply(reply_id, result) = protocol::parse(&text)
                         && reply_id == id
                     {
@@ -92,17 +100,18 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
                             ));
                         }
                         if config.expected_pubkey.is_some() || config.expected_chain.is_some() {
+                            stage.store(2, std::sync::atomic::Ordering::Relaxed);
                             verify_identity(&mut socket, config).await?;
                         }
                         return Ok(socket);
                     }
                 }
-                Ok(Message::Ping(_)) => {
+                Some(Ok(Message::Ping(_))) => {
                     socket.flush().await.map_err(|_| {
                         Error::new(ErrorKind::Connection, "pong failed", Execution::NotSent)
                     })?;
                 }
-                Ok(Message::Pong(_)) => {}
+                Some(Ok(Message::Pong(_))) => {}
                 _ => break,
             }
         }
@@ -117,7 +126,11 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
         .map_err(|_| {
             Error::new(
                 ErrorKind::Timeout,
-                "connect/readiness deadline exceeded",
+                match stage.load(std::sync::atomic::Ordering::Relaxed) {
+                    0 => "websocket handshake deadline exceeded",
+                    1 => "command readiness deadline exceeded",
+                    _ => "identity check deadline exceeded",
+                },
                 Execution::NotSent,
             )
         })?
