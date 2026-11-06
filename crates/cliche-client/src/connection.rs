@@ -61,6 +61,9 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
                                 Execution::NotSent,
                             ));
                         }
+                        if config.expected_pubkey.is_some() || config.expected_chain.is_some() {
+                            verify_identity(&mut socket, config).await?;
+                        }
                         return Ok(socket);
                     }
                 }
@@ -90,13 +93,134 @@ pub(crate) async fn open(config: &ClientBuilder) -> Result<Socket, Error> {
         })?
 }
 
+async fn verify_identity(socket: &mut Socket, config: &ClientBuilder) -> Result<(), Error> {
+    let id = uuid::Uuid::new_v4().to_string();
+    socket
+        .send(Message::Text(
+            json!({"jsonrpc":"2.0","id":id,"method":"get-info","params":{}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::Connection,
+                "identity check write failed",
+                Execution::NotSent,
+            )
+        })?;
+    while let Some(Ok(frame)) = socket.next().await {
+        if let Message::Text(text) = frame
+            && let Incoming::Reply(reply_id, result) = protocol::parse(&text)
+            && reply_id == id
+        {
+            let info = result?;
+            if config
+                .expected_pubkey
+                .as_ref()
+                .is_some_and(|expected| info["main_pubkey"].as_str() != Some(expected))
+                || config
+                    .expected_chain
+                    .as_ref()
+                    .is_some_and(|expected| info["chain"].as_str() != Some(expected))
+            {
+                return Err(Error::new(
+                    ErrorKind::Protocol,
+                    "cliche identity mismatch",
+                    Execution::NotSent,
+                ));
+            }
+            return Ok(());
+        }
+    }
+    Err(Error::new(
+        ErrorKind::Connection,
+        "identity check disconnected",
+        Execution::NotSent,
+    ))
+}
+
 pub(crate) async fn run(
-    socket: Socket,
+    mut socket: Socket,
     mut commands: mpsc::Receiver<Outbound>,
     state: Arc<State>,
     mut stop: watch::Receiver<bool>,
     done: watch::Sender<bool>,
-    _config: ClientBuilder,
+    config: ClientBuilder,
+) {
+    loop {
+        session(socket, commands, state.clone(), &mut stop).await;
+        state.disconnect(ErrorKind::Connection);
+        if *stop.borrow() {
+            break;
+        }
+        state.set_status(ConnectionState::Disconnected);
+        let _ = state.events.send(EventRecord::Gap {
+            gap: crate::events::EventGap {
+                reason: crate::events::GapReason::UpstreamDisconnected,
+                missed_count: None,
+            },
+        });
+        let Some(policy) = config.reconnect else {
+            break;
+        };
+        let mut connected = None;
+        state.set_status(ConnectionState::Reconnecting);
+        for attempt in 0..policy.max_attempts {
+            let delay = policy
+                .initial_delay
+                .saturating_mul(2_u32.saturating_pow(attempt))
+                .min(policy.max_delay);
+            let jitter = f64::from(uuid::Uuid::new_v4().as_bytes()[0]) / 1024.0;
+            tokio::select! {
+                biased;
+                _ = stop.wait_for(|stop| *stop) => break,
+                _ = tokio::time::sleep(delay.mul_f64(1.0 + jitter)) => {},
+            }
+            let result = tokio::select! {
+                biased;
+                _ = stop.wait_for(|stop| *stop) => break,
+                result = open(&config) => result,
+            };
+            match result {
+                Ok(next) => {
+                    connected = Some(next);
+                    break;
+                }
+                Err(error)
+                    if error.kind == ErrorKind::Protocol
+                        || error.kind == ErrorKind::InvalidArgument =>
+                {
+                    break;
+                }
+                Err(_) => {}
+            }
+        }
+        let Some(next) = connected else {
+            break;
+        };
+        if state.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        let (tx, rx) = mpsc::channel(config.max_in_flight);
+        state.lock().active = Some(crate::client::Active {
+            writer: tx,
+            session: uuid::Uuid::new_v4().to_string(),
+            counter: 0,
+        });
+        socket = next;
+        commands = rx;
+        state.set_status(ConnectionState::Connected);
+    }
+    state.set_status(ConnectionState::Closed);
+    done.send_replace(true);
+}
+
+async fn session(
+    socket: Socket,
+    mut commands: mpsc::Receiver<Outbound>,
+    state: Arc<State>,
+    stop: &mut watch::Receiver<bool>,
 ) {
     let (mut sink, mut stream) = socket.split();
     let write_state = state.clone();
@@ -144,7 +268,4 @@ pub(crate) async fn run(
         writer.abort();
         let _ = writer.await;
     }
-    state.disconnect(ErrorKind::Connection);
-    state.set_status(ConnectionState::Closed);
-    done.send_replace(true);
 }

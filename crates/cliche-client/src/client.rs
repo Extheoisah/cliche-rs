@@ -90,13 +90,51 @@ pub struct Client {
 #[derive(Clone)]
 pub struct ClientBuilder {
     pub(crate) endpoint: String,
+    pub(crate) reconnect: Option<ReconnectPolicy>,
+    pub(crate) expected_pubkey: Option<String>,
+    pub(crate) expected_chain: Option<String>,
     pub(crate) connect_timeout: Duration,
     pub(crate) request_timeout: Duration,
     pub(crate) max_in_flight: usize,
     pub(crate) event_capacity: usize,
     pub(crate) max_message_size: usize,
 }
+/// Bounded opt-in reconnection after an established socket disconnects.
+#[derive(Clone, Copy, Debug)]
+pub struct ReconnectPolicy {
+    /// Maximum attempts per disconnect. Each attempt also has a connect timeout.
+    pub max_attempts: u32,
+    /// Initial exponential backoff, with up to 25% additional jitter.
+    pub initial_delay: Duration,
+    /// Maximum delay before jitter.
+    pub max_delay: Duration,
+}
+impl Default for ReconnectPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 5,
+            initial_delay: Duration::from_millis(250),
+            max_delay: Duration::from_secs(30),
+        }
+    }
+}
 impl ClientBuilder {
+    /// Retry lost connections without replaying any command. Disabled by default.
+    pub fn reconnect(mut self, policy: ReconnectPolicy) -> Self {
+        self.reconnect = Some(policy);
+        self
+    }
+    /// Check the node pubkey through get-info on every connection.
+    pub fn expected_pubkey(mut self, pubkey: impl Into<String>) -> Self {
+        self.expected_pubkey = Some(pubkey.into());
+        self
+    }
+    /// Check the chain hash through get-info on every connection.
+    pub fn expected_chain(mut self, chain: impl Into<String>) -> Self {
+        self.expected_chain = Some(chain.into());
+        self
+    }
+
     /// Deadline for connecting and verifying command readiness.
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
@@ -161,6 +199,15 @@ impl ClientBuilder {
         Ok(client)
     }
     fn validate(&self) -> Result<(), Error> {
+        if let Some(policy) = self.reconnect
+            && (policy.max_attempts == 0
+                || policy.max_attempts > 100
+                || policy.initial_delay.is_zero()
+                || policy.initial_delay > policy.max_delay
+                || policy.max_delay > Duration::from_secs(300))
+        {
+            return Err(Error::invalid("invalid reconnect policy"));
+        }
         let uri: tokio_tungstenite::tungstenite::http::Uri = self
             .endpoint
             .parse()
@@ -199,6 +246,9 @@ impl Client {
     pub fn builder(endpoint: impl Into<String>) -> ClientBuilder {
         ClientBuilder {
             endpoint: endpoint.into(),
+            reconnect: None,
+            expected_pubkey: None,
+            expected_chain: None,
             connect_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(30),
             max_in_flight: 128,
@@ -217,6 +267,19 @@ impl Client {
     /// Watch the latest status without polling. Changes may be coalesced.
     pub fn watch_status(&self) -> watch::Receiver<ConnectionState> {
         self.inner.state.status.subscribe()
+    }
+    /// Subscribe to typed notifications and local status/gap/decode records.
+    pub fn subscribe(&self) -> crate::events::Subscription {
+        let receiver = self.inner.state.events.subscribe();
+        crate::events::Subscription {
+            receiver,
+            initial: Some(self.status()),
+            status: self.watch_status(),
+            stream_id: uuid::Uuid::new_v4().to_string(),
+            sequence: 0,
+            ended: false,
+            methods: Vec::new(),
+        }
     }
     /// Send a method with object params, returning its JSON result. Never replayed.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, Error> {

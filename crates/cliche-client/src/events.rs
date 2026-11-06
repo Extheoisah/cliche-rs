@@ -322,3 +322,90 @@ pub enum EventRecord {
         error: EventDecodeError,
     },
 }
+
+/// JSON-serializable subscription delivery. Sequence is local, not a replay offset.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventDelivery {
+    /// Current bridge envelope version.
+    pub schema_version: u8,
+    /// Opaque ID unique to this subscription.
+    pub stream_id: String,
+    /// Monotonic local sequence, including status/gap/decode records.
+    pub sequence: u64,
+    /// Typed content.
+    #[serde(flatten)]
+    pub record: EventRecord,
+}
+
+/// Independent bounded subscription. Slow consumers get explicit gap records.
+pub struct Subscription {
+    pub(crate) receiver: tokio::sync::broadcast::Receiver<EventRecord>,
+    pub(crate) initial: Option<ConnectionState>,
+    pub(crate) status: tokio::sync::watch::Receiver<ConnectionState>,
+    pub(crate) stream_id: String,
+    pub(crate) sequence: u64,
+    pub(crate) ended: bool,
+    pub(crate) methods: Vec<String>,
+}
+impl Subscription {
+    /// Restrict upstream methods. Bridge records always bypass this filter.
+    pub fn with_methods(mut self, methods: impl IntoIterator<Item = String>) -> Self {
+        self.methods = methods.into_iter().collect();
+        self
+    }
+    /// Next typed record, or `None` after final close. Cancellation-safe.
+    pub async fn recv(&mut self) -> Option<EventDelivery> {
+        if self.ended {
+            return None;
+        }
+        let record = if let Some(state) = self.initial.take() {
+            EventRecord::Connection { state }
+        } else {
+            loop {
+                let record = match self.receiver.recv().await {
+                    Ok(record) => record,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
+                        EventRecord::Gap {
+                            gap: EventGap {
+                                reason: GapReason::SubscriberLagged,
+                                missed_count: Some(count),
+                            },
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        EventRecord::Connection {
+                            state: ConnectionState::Closed,
+                        }
+                    }
+                };
+                if let EventRecord::Notification { event } = &record
+                    && !self.methods.is_empty()
+                    && !self.methods.iter().any(|m| m == event.method())
+                {
+                    continue;
+                }
+                // If a terminal status itself was lost to lag, still end after
+                // draining retained records instead of waiting on a live sender.
+                if self.receiver.is_empty() && *self.status.borrow() == ConnectionState::Closed {
+                    self.initial = Some(ConnectionState::Closed);
+                }
+                break record;
+            }
+        };
+        if matches!(
+            record,
+            EventRecord::Connection {
+                state: ConnectionState::Closed
+            }
+        ) {
+            self.ended = true;
+        }
+        self.sequence = self.sequence.checked_add(1)?;
+        Some(EventDelivery {
+            schema_version: 1,
+            stream_id: self.stream_id.clone(),
+            sequence: self.sequence,
+            record,
+        })
+    }
+}

@@ -10,7 +10,10 @@
    Design refinement: a short synchronous mutex protects the pending map so
    dropped futures remove waiters immediately without a cancellation queue.
    No locks span await points.
-3. Event subscriptions/reconnect: pending.
+3. Event subscriptions/reconnect: complete. Typed local deliveries with subscription
+   IDs/sequences, filters, lag/decode records, terminal status, bounded jittered
+   reconnect and optional identity checks. Tests verify slow-consumer isolation
+   and no command replay. Tests and Clippy pass.
 4. Helpers/examples: pending.
 5. Optional process management: pending.
 6. gRPC gateway/Node example: pending.

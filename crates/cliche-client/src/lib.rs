@@ -7,4 +7,4 @@ pub use error::{Error, ErrorKind, Execution};
 
 mod client;
 mod connection;
-pub use client::{Client, ClientBuilder};
+pub use client::{Client, ClientBuilder, ReconnectPolicy};
