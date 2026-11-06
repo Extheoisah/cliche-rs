@@ -1,168 +1,187 @@
 # cliche-rs
 
-Async Rust client for [cliche](https://github.com/nbd-wtf/cliche): WebSocket commands,
-typed events, JSON serialization, bounded concurrency, and optional process ownership.
-Rust 1.94 or later; Tokio runtime required. Apache-2.0.
+A lightweight Rust library for sending commands to [cliche](https://github.com/nbd-wtf/cliche)
+over WebSocket and receiving typed events. Requires Rust 1.94 or later.
 
-## Rust integration
+- **cliche-client** is the library for Rust applications.
+- **cliche-gateway** exposes the library through gRPC for Node.js and other languages.
+
+The examples below connect to cliche already running at `ws://127.0.0.1:12000/`.
+
+## Use it in a Rust project
+
+Add this to your project's `Cargo.toml`:
 
 ```toml
 [dependencies]
-cliche-client = { path = "/path/to/cliche-rs/crates/cliche-client" }
+cliche-client = { git = "https://github.com/Extheoisah/cliche-rs.git" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt"] }
 ```
+
+Cargo fetches the crate directly from GitHub. You can add `rev = "COMMIT_SHA"`
+to pin a specific commit. See [Cargo's Git dependency documentation](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#specifying-dependencies-from-git-repositories).
+
+### Send commands
+
+Put this in `src/main.rs`, then run `cargo run`:
+
+```rust,no_run
+use cliche_client::{Client, CreateInvoiceParams};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::connect("ws://127.0.0.1:12000/").await?;
+
+    let info = client.get_info().await?;
+    println!("{info}");
+
+    // Use call() for any cliche command. Results are JSON values.
+    let payments = client
+        .call("list-payments", json!({"count": 10}))
+        .await?;
+    println!("{payments}");
+
+    let invoice = client
+        .create_invoice(CreateInvoiceParams {
+            msatoshi: Some(120_000),
+            description: Some("Example invoice".into()),
+            ..Default::default()
+        })
+        .await?;
+    println!("{invoice}");
+
+    client.close().await;
+    Ok(())
+}
+```
+
+Amounts are integer numbers in millisatoshis. Creating an invoice requires
+receiving capacity in cliche. Other helpers include `ping`, `pay_invoice`,
+`check_payment`, `list_payments`, and `get_address`.
+
+### Listen for typed events
+
+This is a separate runnable example. Subscribe before the activity you want to
+observe; the stream waits for events as they happen.
 
 ```rust,no_run
 use cliche_client::{Client, events::{ClicheEvent, EventRecord}};
 
-# async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let client = Client::connect("ws://127.0.0.1:12000/").await?;
-let mut events = client.subscribe();
-let info = client.get_info().await?;
-while let Some(delivery) = events.recv().await {
-    match delivery.record {
-        EventRecord::Notification { event: ClicheEvent::PaymentReceived(payment) } => {
-            // Optional because upstream can omit the amount.
-            let amount_msat = payment.msatoshi;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::connect("ws://127.0.0.1:12000/").await?;
+    let mut events = client.subscribe();
+
+    while let Some(delivery) = events.recv().await {
+        match delivery.record {
+            EventRecord::Notification {
+                event: ClicheEvent::PaymentReceived(payment),
+            } => {
+                println!(
+                    "Received payment {}: {:?} msat",
+                    payment.payment_hash, payment.msatoshi
+                );
+            }
+            EventRecord::Gap { .. } => {
+                // Check your persisted payment hashes with check_payment().
+                eprintln!("Missed events; reconcile payment state.");
+            }
+            _ => {}
         }
-        EventRecord::Gap { .. } => { /* reconcile persisted hashes */ }
-        _ => {}
     }
+
+    client.close().await;
+    Ok(())
 }
-client.close().await;
-# Ok(())
-# }
 ```
 
-Known events have named Rust payload structs. `serde_json::to_string(&delivery)`
-produces JSON with version, subscription ID, sequence, kind, method and params.
-Only unknown methods and extension fields use raw JSON. Commands return JSON;
-`call(method, json_object)` supports every upstream method. Common helpers cover
-ping, get-info, invoice creation/payment, check-payment, recent payments, and address.
+`msatoshi` is optional because cliche sometimes omits it from received-payment
+events. Run the event loop in a separate Tokio task if your application also needs
+to keep sending commands. `Client` is cloneable; clones share the same connection.
+Calling `close()` closes that connection for all clones.
 
-`Client::builder` configures timeouts, size/capacity limits, optional expected node
-pubkey/chain, and opt-in `ReconnectPolicy`. Reconnect never replays commands.
-All clones share a connection; `close()` closes it for every clone. Last-handle
-drop signals cleanup. Subscribe before sending commands whose events matter.
+Events can also be serialized with `serde_json::to_string(&delivery)`. Payment
+payloads can contain sensitive preimages. Events are live and cannot be replayed;
+a timeout does not prove a payment failed, so check its state before retrying.
 
-Events are live and best effort. Slow consumers get a typed gap record; disconnects
-have unknown loss counts. Local sequence numbers do not provide replay. A payment
-initiation response is not final settlement. Timeouts and cancellation can happen
-after execution begins: reconcile with `check_payment` before retrying. Unknown
-payment hashes are upstream errors. Recent payments default to five entries.
+### Optional features
 
-## Examples and validation
+Enable `tls` for `wss://` connections or `process` to start cliche from your app:
+
+```toml
+cliche-client = { git = "https://github.com/Extheoisah/cliche-rs.git", features = ["tls", "process"] }
+```
+
+With `process`, use `process::{ProcessConfig, ManagedCliche}` and call
+`shutdown().await` when finished. See the [startup example](crates/cliche-client/examples/start.rs).
+Connecting to an existing instance does not give the library ownership of it.
+
+## Use it from Node.js
+
+The Node client connects through the gRPC gateway. It is an example JavaScript
+client, not a native Rust binding or a published npm package.
+
+First install `protoc` (`brew install protobuf` on macOS or
+`apt install protobuf-compiler` on Debian/Ubuntu), then start the gateway:
 
 ```sh
-cargo run -p cliche-client --example attach -- ws://127.0.0.1:12000/
-cargo run -p cliche-client --example events -- ws://127.0.0.1:12000/
-cargo test --workspace --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+git clone https://github.com/Extheoisah/cliche-rs.git
+cd cliche-rs
+cargo run -p cliche-gateway -- --cliche-url ws://127.0.0.1:12000/
 ```
 
-Tests use disposable local mock servers, never your running wallet. The `tls`
-feature enables `wss://`; it is disabled by default. The `process` feature enables native/JAR supervision. The gateway is a separate
-crate; direct client users do not build its gRPC stack.
+In a second terminal, from the cloned repository:
 
-## Design and progress
+```sh
+cd examples/node
+npm ci
+npm start -- 127.0.0.1:12001
+```
 
-- [Milestone progress](docs/PROGRESS.md)
-- [Compatibility and release gates](docs/COMPATIBILITY.md)
-- [Local footprint baseline](docs/BASELINE.md)
-- [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
-- [Source-verified protocol findings](docs/PROTOCOL.md)
+The example sends a ping and listens for received payments. To use its client
+helper from a JavaScript file in the repository root:
+
+```js
+import { connect, parse, stringify } from './examples/node/client.mjs';
+
+const client = connect('127.0.0.1:12001');
+const events = client.subscribe(['payment_received']);
+
+events.on('data', ({ json }) => {
+  const delivery = parse(json);
+  if (delivery.method === 'payment_received') {
+    console.log(stringify({
+      payment_hash: delivery.params.payment_hash,
+      msatoshi: delivery.params.msatoshi,
+    }));
+  }
+});
+events.on('error', error => console.error(`Event stream ended (${error.code}).`));
+
+console.log(stringify(await client.call('get-info')));
+
+process.on('SIGINT', () => {
+  events.cancel();
+  client.close();
+});
+```
+
+The helper uses lossless JSON to preserve large monetary integers. Read the
+[Node examples README](examples/node/README.md) for request results, error handling,
+authentication options, and tests.
+
+All gateway commands are available without a token by default. It listens on
+`127.0.0.1:12001`; use `--listen 0.0.0.0:12001` for access from other machines.
+`--allow-methods` and `CLICHE_GATEWAY_TOKEN` optionally restrict access.
+
+## More information
+
+- [Node examples](examples/node/README.md)
+- [gRPC contract](crates/cliche-gateway/proto/cliche/v1/cliche.proto)
+- [Protocol and supported commands](docs/PROTOCOL.md)
+- [Compatibility and validation](docs/COMPATIBILITY.md)
 - [Contributing](CONTRIBUTING.md)
 
-Crate names are provisional and have not been checked for registry availability.
-Source-reviewed compatibility is pinned in PROTOCOL.md. Read-only attachment to
-the user-provided running instance is verified; managed Nix/Linux execution is
-still unverified. cliche's WebSocket broadcasts wallet-wide replies and
-events; keep it on a trusted private interface. Debug output redacts event payloads,
-but explicitly serialized JSON contains secrets such as payment preimages.
-
-## Managed cliche
-
-```sh
-cargo run -p cliche-client --features process --example start -- \
-  /path/to/cliche-nix/result/bin/cliche /path/to/dedicated-data 12001 testnet
-```
-
-Use `process::{ProcessConfig, ManagedCliche}` to launch a native binary or JAR.
-Configure the seed in the data directory out of band. The manager never runs Nix,
-installs cliche, or reads seed/database files. It retains stdin and drains/discards
-stdout/stderr because diagnostic output can contain secrets. Call `shutdown()`
-to terminate and reap the child; drop signals best-effort cleanup while the Tokio
-runtime is alive. Cloning the client does not keep the owned process alive.
-
-The supervisor binds cliche to IPv4 loopback, rejects occupied ports, and locks
-its data directory against other SDK managers. cliche itself does not honor that
-lock; unrelated processes can still race startup. Use a dedicated port/directory
-and optional expected pubkey. Never run two instances against the same wallet.
-On Unix shutdown sends SIGTERM, then force-kills after the configured grace period;
-other platforms use forceful termination. No wallet-level shutdown RPC is assumed.
-
-## gRPC gateway and Node
-
-The gateway build requires `protoc` (e.g. `protobuf-compiler` on Debian or
-`protobuf` in Homebrew). The client crate has no protoc dependency.
-
-```sh
-cargo run -p cliche-gateway -- --cliche-url ws://127.0.0.1:12000/ --listen 127.0.0.1:12001
-# Expose the gateway on all IPv4 interfaces:
-cargo run -p cliche-gateway -- --listen 0.0.0.0:12001
-```
-
-All commands, including `create-invoice` and `pay-invoice`, are available without
-a token by default. `--allow-methods` optionally restricts commands; setting
-`CLICHE_GATEWAY_TOKEN` explicitly opts into bearer authentication. Event access
-is wallet-wide and separately disabled with `--disable-events`; method allowlists
-do not provide tenant isolation for events. The standalone server exposes standard
-gRPC health at service name `cliche.v1.ClicheService`. Health reports connection
-readiness, not channel liquidity or settlement readiness.
-
-The gateway supports `Call`, `GetStatus`, and streaming `SubscribeEvents` using
-[the protobuf contract](crates/cliche-gateway/proto/cliche/v1/cliche.proto).
-Responses/events are JSON documents inside protobuf strings. Upstream errors are
-JSON application envelopes; gateway errors are gRPC statuses with JSON details
-where generated locally. Client/proxy deadline failures may omit these details.
-A stalled event stream terminates with RESOURCE_EXHAUSTED; resubscribe and reconcile.
-
-[The Node example](examples/node/README.md) includes bearer metadata, streaming,
-and lossless JSON handling. To launch owned cliche from the gateway, use
-`--executable PATH --data-dir PATH --cliche-port PORT --network testnet`.
-No RPC accepts executable paths or remotely starts arbitrary processes.
-
-Plain gRPC binds to loopback by default. Use `--listen 0.0.0.0:12001` for public
-network access; no token or proxy flag is required. Direct server TLS and
-reflection are not implemented. The embeddable `Gateway` service can be added
-to a caller-configured Tonic server; its caller owns transport security.
-
-## Release validation
-
-```sh
-cargo package -p cliche-client
-```
-
-Before publishing, inspect package contents with `cargo package --list` and run
-standard Cargo package verification. Package the gateway after its client dependency
-is available on the registry. See the compatibility notes for outstanding release
-gates; package verification is not currently part of CI.
-
-## Terminal invoice request
-
-`params_json` is a JSON string containing a JSON object. Monetary fields inside
-that object must be integer numbers, not quoted strings:
-
-```sh
-grpcurl -plaintext \
-  -import-path crates/cliche-gateway/proto \
-  -proto cliche/v1/cliche.proto \
-  -d '{"method":"create-invoice","params_json":"{\"msatoshi\":120000}","request_id":"terminal-1"}' \
-  127.0.0.1:12001 cliche.v1.ClicheService/Call
-```
-
-Known numeric fields are checked before forwarding to cliche. Wrong types/ranges
-return gRPC INVALID_ARGUMENT immediately, with the field name in the status text
-and the caller's request label in JSON status details. Unknown upstream methods
-remain accessible; validation does not coerce numeric strings into numbers.
+Licensed under [Apache-2.0](LICENSE).

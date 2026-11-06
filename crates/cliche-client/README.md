@@ -4,6 +4,14 @@ Lightweight async Rust client for cliche. WebSocket commands return JSON; known
 notifications are Rust enums and structs that serialize to JSON. Requires Tokio
 and Rust 1.94. Optional `tls` and `process` features are disabled by default.
 
+Add the client to your Cargo.toml:
+
+```toml
+[dependencies]
+cliche-client = { git = "https://github.com/Extheoisah/cliche-rs.git" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+
 ```rust,no_run
 use cliche_client::{Client, events::{ClicheEvent, EventRecord}};
 
