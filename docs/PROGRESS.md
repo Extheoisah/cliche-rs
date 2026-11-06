@@ -54,3 +54,10 @@ Gateway access defaults updated at the user's request: every command is allowed
 without authentication. Public listen addresses no longer require a token/proxy
 flag. Loopback remains the default listen address; explicit token/method policies
 are still supported. Invoice command access is regression-tested using mocks.
+
+Numeric parameter validation: generic client/gateway calls now validate known
+Scala Long/Int fields before transmission. Quoted amounts, fractional numbers,
+out-of-range integers and missing required numeric fields fail immediately with
+not_sent execution state. gRPC status text names the field, and JSON details
+preserve the application request label. Mock tests cover malformed and valid
+64-bit invoice arguments; no live invoice was created.

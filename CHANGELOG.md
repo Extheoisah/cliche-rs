@@ -2,6 +2,9 @@
 
 ## 0.1.0 (unreleased)
 
+- Validate known numeric command parameters before transmission, returning useful
+  INVALID_ARGUMENT errors instead of waiting for cliche errors with empty IDs.
+
 - All gateway commands are available without authentication by default. Public
   listen addresses no longer require token/proxy settings; restrictions are opt-in.
 

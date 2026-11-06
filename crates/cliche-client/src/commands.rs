@@ -98,3 +98,35 @@ impl Client {
         self.call("get-address", json!({})).await
     }
 }
+
+// cliche drops request IDs on deserialization failures. Catch known numeric wire
+// mistakes before transmission; never guess which call an empty-ID error belongs to.
+pub(crate) fn validate_numeric_params(method: &str, params: &Value) -> Result<(), Error> {
+    // (field, required, Scala Int rather than Long)
+    let fields: &[(&str, bool, bool)] = match method {
+        "create-invoice" | "pay-invoice" => &[("msatoshi", false, false)],
+        "pay-lnurl" => &[("msatoshi", true, false)],
+        "request-hc" => &[("port", true, true)],
+        "open-nc" => &[("port", true, true), ("satoshi", false, false)],
+        "send-to-address" => &[("satoshi", false, false)],
+        "resize-hc" => &[("satoshiDelta", true, false)],
+        "list-payments" | "list-txs" => &[("count", false, true)],
+        _ => return Ok(()),
+    };
+    for &(field, required, int32) in fields {
+        let value = params.get(field);
+        if !required && value.is_none_or(Value::is_null) {
+            continue;
+        }
+        let valid = value
+            .and_then(Value::as_i64)
+            .is_some_and(|number| !int32 || i32::try_from(number).is_ok());
+        if !valid {
+            let bits = if int32 { 32 } else { 64 };
+            return Err(Error::invalid(&format!(
+                "{method} params.{field} must be a signed {bits}-bit JSON integer, not a quoted string"
+            )));
+        }
+    }
+    Ok(())
+}

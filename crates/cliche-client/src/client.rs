@@ -318,6 +318,7 @@ impl Client {
                 "method must be a name and params must be an object",
             ));
         }
+        crate::commands::validate_numeric_params(method, &params)?;
         if duration.is_zero() || duration > Duration::from_secs(86400) {
             return Err(Error::invalid(
                 "call timeout must be between zero and one day",

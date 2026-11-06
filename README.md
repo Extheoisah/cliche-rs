@@ -147,3 +147,21 @@ python3 scripts/check-packages.py --offline
 This assembles both packages, checks archive contents, and compiles unpacked
 sources together without publishing. See the compatibility notes for the Cargo
 1.94 offline workspace verification issue and the remaining managed Nix/Linux release gate.
+
+## Terminal invoice request
+
+`params_json` is a JSON string containing a JSON object. Monetary fields inside
+that object must be integer numbers, not quoted strings:
+
+```sh
+grpcurl -plaintext \
+  -import-path crates/cliche-gateway/proto \
+  -proto cliche/v1/cliche.proto \
+  -d '{"method":"create-invoice","params_json":"{\"msatoshi\":120000}","request_id":"terminal-1"}' \
+  127.0.0.1:12001 cliche.v1.ClicheService/Call
+```
+
+Known numeric fields are checked before forwarding to cliche. Wrong types/ranges
+return gRPC INVALID_ARGUMENT immediately, with the field name in the status text
+and the caller's request label in JSON status details. Unknown upstream methods
+remain accessible; validation does not coerce numeric strings into numbers.

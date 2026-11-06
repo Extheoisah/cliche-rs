@@ -107,9 +107,16 @@ fn error_status(error: Error, request_id: &str) -> Status {
         ErrorKind::Protocol => tonic::Code::Internal,
         _ => tonic::Code::Unavailable,
     };
+    // Local validation messages contain field names/rules, never raw values.
+    // Expose them in the status text so terminal clients need not decode details.
+    let message = if error.kind == ErrorKind::InvalidArgument {
+        error.message.as_str()
+    } else {
+        "cliche command failed; inspect JSON status details"
+    };
     Status::with_details(
         code,
-        "cliche command failed; inspect JSON status details",
+        message,
         error_document(&error, request_id)
             .to_string()
             .into_bytes()

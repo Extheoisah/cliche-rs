@@ -295,7 +295,7 @@ async fn default_policy_allows_invoice_commands_without_a_token() {
         // The mock echoes params. No live payment or channel command is sent.
         let response = h
             .rpc
-            .call(call(method, json!({"mock":true})))
+            .call(call(method, json!({"mock":true,"port":9735})))
             .await
             .unwrap();
         let document: Value = serde_json::from_str(&response.into_inner().json).unwrap();
@@ -309,5 +309,40 @@ async fn default_policy_allows_invoice_commands_without_a_token() {
         .await
         .unwrap();
     drop(events);
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn malformed_numeric_params_return_immediate_correlated_errors() {
+    let mut h = Harness::start(GatewayPolicy::default()).await;
+    for (method, params) in [
+        ("create-invoice", json!({"msatoshi":"120000"})),
+        ("pay-invoice", json!({"msatoshi":1.5})),
+        ("pay-lnurl", json!({})),
+        ("request-hc", json!({"port":"9735"})),
+        ("open-nc", json!({"port":2147483648_i64})),
+        ("resize-hc", json!({"satoshiDelta":"-100"})),
+        ("list-payments", json!({"count":"10"})),
+        (
+            "send-to-address",
+            json!({"satoshi":9223372036854775808_u64}),
+        ),
+    ] {
+        let status = h.rpc.call(call(method, params)).await.unwrap_err();
+        assert_eq!(status.code(), Code::InvalidArgument);
+        assert!(status.message().contains("JSON integer"));
+        let details: Value = serde_json::from_slice(status.details()).unwrap();
+        assert_eq!(details["request_id"], "same-label");
+        assert_eq!(details["error"]["execution"], "not_sent");
+    }
+    // Valid numbers still pass through untouched, including values above 2^53.
+    let params = json!({"msatoshi":9007199254740993_i64});
+    let reply = h
+        .rpc
+        .call(call("create-invoice", params.clone()))
+        .await
+        .unwrap();
+    let document: Value = serde_json::from_str(&reply.into_inner().json).unwrap();
+    assert_eq!(document["result"], params);
     h.finish().await;
 }
