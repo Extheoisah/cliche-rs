@@ -8,3 +8,6 @@ pub use error::{Error, ErrorKind, Execution};
 mod client;
 mod connection;
 pub use client::{Client, ClientBuilder, ReconnectPolicy};
+
+pub mod commands;
+pub use commands::{CreateInvoiceParams, PayInvoiceParams};

@@ -14,7 +14,9 @@
    IDs/sequences, filters, lag/decode records, terminal status, bounded jittered
    reconnect and optional identity checks. Tests verify slow-consumer isolation
    and no command replay. Tests and Clippy pass.
-4. Helpers/examples: pending.
+4. Helpers/examples: complete. MVP command helpers validate params, preserve
+   exact wire casing and optional fields, and return JSON. Rust attach/typed-event
+   examples compile. Wire tests include monetary integers above 2^53.
 5. Optional process management: pending.
 6. gRPC gateway/Node example: pending.
 7. Compatibility/release checks: pending. Live Nix compatibility needs an isolated

@@ -1,30 +1,79 @@
 # cliche-rs
 
-A planned lightweight Rust client for [cliche](https://github.com/nbd-wtf/cliche),
-with WebSocket communication, JSON responses, typed Rust events that serialize
-to JSON, optional subprocess
-management, and a separate gRPC gateway for other languages.
+Async Rust client for [cliche](https://github.com/nbd-wtf/cliche): WebSocket commands,
+typed events, JSON serialization, bounded concurrency, and optional process ownership.
+Rust 1.94 or later; Tokio runtime required. Apache-2.0.
 
-**Status: implementation planning. No working client is implemented yet.**
-The repository name and proposed crate names are provisional; registry
-availability has not been checked.
+## Rust integration
 
-## Intended integrations
+```toml
+[dependencies]
+cliche-client = { path = "/path/to/cliche-rs/crates/cliche-client" }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+```
 
-- Rust applications depend directly on `cliche-client` and use their Tokio runtime.
-- Node.js and other applications use the `cliche-gateway` service through gRPC.
-- Either integration can attach to an existing cliche WebSocket endpoint.
-- Optional process support launches a configured cliche executable, then uses
-  WebSocket for commands and events. A process runs on the host where it is
-  launched; remote deployment belongs to the deployment platform.
+```rust,no_run
+use cliche_client::{Client, events::{ClicheEvent, EventRecord}};
 
-## Design documents
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let client = Client::connect("ws://127.0.0.1:12000/").await?;
+let mut events = client.subscribe();
+let info = client.get_info().await?;
+while let Some(delivery) = events.recv().await {
+    match delivery.record {
+        EventRecord::Notification { event: ClicheEvent::PaymentReceived(payment) } => {
+            // Optional because upstream can omit the amount.
+            let amount_msat = payment.msatoshi;
+        }
+        EventRecord::Gap { .. } => { /* reconcile persisted hashes */ }
+        _ => {}
+    }
+}
+client.close().await;
+# Ok(())
+# }
+```
 
-- [Implementation plan](docs/IMPLEMENTATION_PLAN.md): architecture, API proposals,
-  failure semantics, implementation milestones, acceptance criteria, and commits.
-- [Protocol findings](docs/PROTOCOL.md): source-verified behavior and compatibility.
-- [Proposed gRPC contract](docs/cliche-v1.proto): draft contract, not generated code.
-- [Contributing](CONTRIBUTING.md): Rust conventions and contribution workflow.
+Known events have named Rust payload structs. `serde_json::to_string(&delivery)`
+produces JSON with version, subscription ID, sequence, kind, method and params.
+Only unknown methods and extension fields use raw JSON. Commands return JSON;
+`call(method, json_object)` supports every upstream method. Common helpers cover
+ping, get-info, invoice creation/payment, check-payment, recent payments, and address.
 
-Start with the WebSocket client. Keep process management optional and the gRPC
-stack in a separate crate so embedding applications only pay for what they use.
+`Client::builder` configures timeouts, size/capacity limits, optional expected node
+pubkey/chain, and opt-in `ReconnectPolicy`. Reconnect never replays commands.
+All clones share a connection; `close()` closes it for every clone. Last-handle
+drop signals cleanup. Subscribe before sending commands whose events matter.
+
+Events are live and best effort. Slow consumers get a typed gap record; disconnects
+have unknown loss counts. Local sequence numbers do not provide replay. A payment
+initiation response is not final settlement. Timeouts and cancellation can happen
+after execution begins: reconcile with `check_payment` before retrying. Unknown
+payment hashes are upstream errors. Recent payments default to five entries.
+
+## Examples and validation
+
+```sh
+cargo run -p cliche-client --example attach -- ws://127.0.0.1:12000/
+cargo run -p cliche-client --example events -- ws://127.0.0.1:12000/
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Tests use disposable local mock servers, never your running wallet. The `tls`
+feature enables `wss://`; it is disabled by default. The process supervisor and
+gRPC gateway are tracked in the remaining milestones.
+
+## Design and progress
+
+- [Milestone progress](docs/PROGRESS.md)
+- [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Source-verified protocol findings](docs/PROTOCOL.md)
+- [Contributing](CONTRIBUTING.md)
+
+Crate names are provisional and have not been checked for registry availability.
+Source-reviewed compatibility is pinned in PROTOCOL.md; live Nix compatibility
+has not yet been verified. cliche's WebSocket broadcasts wallet-wide replies and
+events; keep it on a trusted private interface. Debug output redacts event payloads,
+but explicitly serialized JSON contains secrets such as payment preimages.
