@@ -10,7 +10,7 @@ use tonic::{Request, Response, Status};
 /// Admission, access and streaming limits. One policy represents one wallet trust boundary.
 #[derive(Clone)]
 pub struct GatewayPolicy {
-    /// Optional bearer token. Do not expose plaintext gRPC outside a trusted network.
+    /// Optional bearer token. None (the default) allows unauthenticated access.
     pub bearer_token: Option<String>,
     /// Allowed command methods; None allows every method. Events are separately gated.
     pub allowed_methods: Option<HashSet<String>>,
@@ -33,18 +33,7 @@ impl Default for GatewayPolicy {
     fn default() -> Self {
         Self {
             bearer_token: None,
-            allowed_methods: Some(
-                [
-                    "ping",
-                    "get-info",
-                    "check-payment",
-                    "list-payments",
-                    "get-address",
-                ]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            ),
+            allowed_methods: None,
             allow_events: true,
             max_calls: 128,
             max_subscribers: 64,

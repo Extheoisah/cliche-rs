@@ -163,6 +163,7 @@ async fn grpc_calls_events_errors_and_large_integers() {
 async fn access_controls_apply_to_commands_events_and_status() {
     let mut h = Harness::start(GatewayPolicy {
         bearer_token: Some("test-token".into()),
+        allowed_methods: Some(["ping".to_owned()].into_iter().collect()),
         allow_events: false,
         ..Default::default()
     })
@@ -284,5 +285,29 @@ async fn node_lossless_roundtrip() {
         .await
         .unwrap();
     assert!(status.success());
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn default_policy_allows_invoice_commands_without_a_token() {
+    let mut h = Harness::start(GatewayPolicy::default()).await;
+    for method in ["create-invoice", "pay-invoice", "request-hc"] {
+        // The mock echoes params. No live payment or channel command is sent.
+        let response = h
+            .rpc
+            .call(call(method, json!({"mock":true})))
+            .await
+            .unwrap();
+        let document: Value = serde_json::from_str(&response.into_inner().json).unwrap();
+        assert_eq!(document["kind"], "response");
+        assert_eq!(document["result"]["mock"], true);
+    }
+    h.rpc.get_status(proto::GetStatusRequest {}).await.unwrap();
+    let events = h
+        .rpc
+        .subscribe_events(proto::SubscribeEventsRequest { methods: vec![] })
+        .await
+        .unwrap();
+    drop(events);
     h.finish().await;
 }

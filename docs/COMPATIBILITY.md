@@ -93,7 +93,8 @@ repository/documentation URLs are chosen. No package was published. Reproduce ar
   serde error (which can quote secrets). Field paths are not currently exposed.
 - Generic Rust calls return results; upstream IDs remain internal rather than
   appearing in gateway response envelopes. Application request labels are echoed.
-- The gateway implements a trusted TLS-proxy deployment mode. Direct server TLS,
+- The gateway permits public binds and all commands without authentication by
+  default. Token authentication and method allowlists are optional. Direct server TLS,
   reflection, custom metrics exporters and idle JSON-RPC heartbeat timers are
   not implemented. WebSocket protocol ping/pong handling is tested.
 - Managed gateway startup uses process-exit monitoring. Reconnect and chain-pin

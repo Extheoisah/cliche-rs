@@ -109,12 +109,13 @@ The gateway build requires `protoc` (e.g. `protobuf-compiler` on Debian or
 
 ```sh
 cargo run -p cliche-gateway -- --cliche-url ws://127.0.0.1:12000/ --listen 127.0.0.1:12001
-# Explicitly allow payment initiation if your application needs it:
-cargo run -p cliche-gateway -- --allow-methods ping,get-info,create-invoice,pay-invoice,check-payment,list-payments
+# Expose the gateway on all IPv4 interfaces:
+cargo run -p cliche-gateway -- --listen 0.0.0.0:12001
 ```
 
-The default method allowlist is read-only; `--allow-methods '*'` grants full
-command access. Set `CLICHE_GATEWAY_TOKEN` for bearer authentication. Event access
+All commands, including `create-invoice` and `pay-invoice`, are available without
+a token by default. `--allow-methods` optionally restricts commands; setting
+`CLICHE_GATEWAY_TOKEN` explicitly opts into bearer authentication. Event access
 is wallet-wide and separately disabled with `--disable-events`; method allowlists
 do not provide tenant isolation for events. The standalone server exposes standard
 gRPC health at service name `cliche.v1.ClicheService`. Health reports connection
@@ -132,10 +133,9 @@ and lossless JSON handling. To launch owned cliche from the gateway, use
 `--executable PATH --data-dir PATH --cliche-port PORT --network testnet`.
 No RPC accepts executable paths or remotely starts arbitrary processes.
 
-Plain gRPC binds to loopback by default. For nonloopback binds the CLI requires
-`--trusted-proxy` and a nonempty token: supply TLS termination/access controls
-in the deployment proxy and keep its backend network private. Direct server TLS
-and reflection are not implemented. The embeddable `Gateway` service can be added
+Plain gRPC binds to loopback by default. Use `--listen 0.0.0.0:12001` for public
+network access; no token or proxy flag is required. Direct server TLS and
+reflection are not implemented. The embeddable `Gateway` service can be added
 to a caller-configured Tonic server; its caller owns transport security.
 
 ## Release validation

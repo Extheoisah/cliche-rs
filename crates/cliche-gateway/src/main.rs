@@ -1,4 +1,4 @@
-//! Standalone gateway. Plain gRPC is loopback-only unless a trusted proxy is explicit.
+//! Standalone gateway. All commands are public by default; access controls are opt-in.
 use clap::Parser;
 use cliche_client::{
     Client, ReconnectPolicy,
@@ -11,7 +11,7 @@ use std::{collections::HashSet, net::SocketAddr, path::PathBuf};
 #[derive(Parser)]
 #[command(
     version,
-    about = "JSON gRPC gateway for cliche; defaults to read-only command access"
+    about = "JSON gRPC gateway for cliche; all commands enabled without authentication by default"
 )]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:12001")]
@@ -36,27 +36,17 @@ struct Args {
     expected_chain: Option<String>,
     #[arg(long)]
     reconnect: bool,
-    #[arg(
-        long,
-        default_value = "ping,get-info,check-payment,list-payments,get-address"
-    )]
+    /// Optional command allowlist; defaults to every upstream method.
+    #[arg(long, default_value = "*")]
     allow_methods: String,
     #[arg(long)]
     disable_events: bool,
-    /// Opt into plaintext behind an authenticated TLS-terminating trusted proxy.
-    #[arg(long)]
-    trusted_proxy: bool,
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     // Secrets only come from the environment, never process arguments.
     let token = std::env::var("CLICHE_GATEWAY_TOKEN").ok();
-    if !args.listen.ip().is_loopback()
-        && (!args.trusted_proxy || token.as_ref().is_none_or(|t| t.is_empty()))
-    {
-        return Err("nonloopback serving requires --trusted-proxy and CLICHE_GATEWAY_TOKEN".into());
-    }
     let managed = if let Some(executable) = args.executable {
         if args.reconnect || args.expected_chain.is_some() {
             return Err("managed mode currently uses process exit monitoring; reconnect/expected-chain are attach-only".into());

@@ -2,6 +2,9 @@
 
 ## 0.1.0 (unreleased)
 
+- All gateway commands are available without authentication by default. Public
+  listen addresses no longer require token/proxy settings; restrictions are opt-in.
+
 - Async WebSocket client with bounded concurrent commands, string request IDs,
   deadlines, cancellation cleanup, optional identity checks, and no command replay.
 - Typed payment/readiness/LNURL events, forward-compatible extension fields,

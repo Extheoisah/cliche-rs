@@ -425,9 +425,9 @@ filesystem paths or executable commands. Keep arbitrary process start/stop RPCs
 out of v0.1. `GetStatus` reports attach/managed mode but never secrets or raw
 process arguments. One gateway serves one wallet trust boundary.
 
-Bind to loopback by default. Require an explicit authenticated deployment policy
-for nonloopback exposure (TLS/mTLS or a trusted TLS-terminating proxy plus gateway
-credentials). Apply authorization to event subscriptions as well as commands.
+Bind to loopback by default. Per the updated user requirement, all methods are
+public without a token; nonloopback binds do not require authentication or a
+proxy flag. Authentication and method restrictions are opt-in deployment settings. Apply authorization to event subscriptions as well as commands.
 Provide method allowlists; generic calls must pass the same checks as helpers.
 Events are wallet-wide, so this gateway cannot provide tenant isolation simply by
 filtering method names. TLS to a proxy does not add authentication to cliche's

@@ -49,3 +49,8 @@ instance. Initial connection timeouts led to bounded internal readiness-ping
 retries, with a regression test for a lost first reply. Application calls remain
 non-replayed. Actual binary provenance, managed Nix execution and payment-event
 emission are separate unverified checks; see COMPATIBILITY.md.
+
+Gateway access defaults updated at the user's request: every command is allowed
+without authentication. Public listen addresses no longer require a token/proxy
+flag. Loopback remains the default listen address; explicit token/method policies
+are still supported. Invoice command access is regression-tested using mocks.
