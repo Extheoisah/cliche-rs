@@ -55,7 +55,6 @@ impl std::fmt::Debug for Error {
             .finish_non_exhaustive()
     }
 }
-#[allow(dead_code)]
 impl Error {
     pub(crate) fn new(kind: ErrorKind, message: impl Into<String>, execution: Execution) -> Self {
         Self {
