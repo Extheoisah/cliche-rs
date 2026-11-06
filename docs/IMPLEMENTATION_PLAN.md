@@ -2,7 +2,8 @@
 
 Design baseline: 2026-11-06. See [protocol evidence](PROTOCOL.md) for inspected
 revisions and exact upstream behavior. This document specifies proposed behavior;
-none of the APIs below are implemented yet.
+the implemented API is documented in README.md and rustdoc.
+See [milestone progress](PROGRESS.md) for implementation/refinement/validation status.
 
 ## 1. Product boundary and decisions
 
@@ -586,5 +587,5 @@ restarts remain separate proposals. These are scope boundaries, not required
 extensions of the initial implementation.
 
 The first implementation step is workspace creation and protocol fixtures, followed
-by a working attach/ping/call/event path. The current repository intentionally
-contains planning documents and a draft contract only.
+by a working attach/ping/call/event path. The implementation follows these milestones; see PROGRESS.md for actual release
+gates and any validation that still requires an external environment.

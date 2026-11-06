@@ -1,7 +1,8 @@
 # Contributing
 
 Implementation follows the milestones in [the plan](docs/IMPLEMENTATION_PLAN.md).
-Until a Cargo workspace exists, there are no Rust build or test commands to run.
+The workspace has a client crate and a gateway crate. The gateway build needs
+protoc; the client alone does not. See docs/PROGRESS.md for completed checks.
 
 ## Code style
 
@@ -44,6 +45,6 @@ just `--all-features`. Integration tests use a deterministic fake WebSocket serv
 and fake child process. Live cliche tests are opt-in, read-only by default, and
 use a disposable configuration for any separately authorized mutations.
 
-The proposed project license is Apache-2.0, matching both reference projects.
-Add the complete license and Cargo metadata before public distribution; no code
-has been copied from either reference project in this planning scaffold.
+The project uses Apache-2.0, matching both reference projects. Full license texts
+are included in the workspace and packages. The SDK is independently implemented;
+protocol behavior is attributed to the pinned upstream sources in PROTOCOL.md.

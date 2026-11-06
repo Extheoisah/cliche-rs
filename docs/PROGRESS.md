@@ -27,5 +27,18 @@
    deadline details, bounded subscriptions, stall termination and health. Real
    HTTP/2 tests cover concurrent callers, integer precision, auth and timeouts.
    Node lossless parser and mock-backed gRPC roundtrip tested separately.
-7. Compatibility/release checks: pending. Live Nix compatibility needs an isolated
-   Linux/Nix environment; source review is not live verification.
+7. Compatibility/release preparation: local checks complete; external release
+   gates remain. Added opt-in read-only/live managed smoke tests, CI feature/MSRV/
+   platform jobs, package READMEs/licenses, changelog, baseline and compatibility
+   notes. Default, TLS, process and full workspace tests pass locally; Clippy,
+   rustdoc and doctests pass with warnings denied. Node mock gRPC roundtrip passes.
+   Archive content checks and unpacked-source compilation pass. Cargo 1.94's
+   offline workspace verifier hit a temporary-registry checksum bug; a repeatable
+   local-patch package checker covers both unpacked crates instead.
+   Live Nix/Linux/JAR checks, hosted CI runs, final registry names/repository URLs,
+   and publication remain open release gates (COMPATIBILITY.md). Nothing published.
+
+Final validation also fixed explicit TLS crypto-provider selection (tested trusted
+and untrusted local certificates) and immediately stops shared clients when managed
+ownership drops. Fixture startup allows macOS first-execution assessment time.
+Runtime refinements and unsupported options are listed in COMPATIBILITY.md.

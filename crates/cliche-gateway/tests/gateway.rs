@@ -1,5 +1,4 @@
 //! Real HTTP/2 gRPC tests backed by a disposable mock cliche WebSocket.
-#[path = "../../cliche-client/tests/common/mod.rs"]
 mod common;
 use cliche_client::Client;
 use cliche_gateway::{

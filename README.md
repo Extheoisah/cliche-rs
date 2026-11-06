@@ -68,6 +68,8 @@ crate; direct client users do not build its gRPC stack.
 ## Design and progress
 
 - [Milestone progress](docs/PROGRESS.md)
+- [Compatibility and release gates](docs/COMPATIBILITY.md)
+- [Local footprint baseline](docs/BASELINE.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Source-verified protocol findings](docs/PROTOCOL.md)
 - [Contributing](CONTRIBUTING.md)
@@ -134,3 +136,13 @@ Plain gRPC binds to loopback by default. For nonloopback binds the CLI requires
 in the deployment proxy and keep its backend network private. Direct server TLS
 and reflection are not implemented. The embeddable `Gateway` service can be added
 to a caller-configured Tonic server; its caller owns transport security.
+
+## Release validation
+
+```sh
+python3 scripts/check-packages.py --offline
+```
+
+This assembles both packages, checks archive contents, and compiles unpacked
+sources together without publishing. See the compatibility notes for the Cargo
+1.94 offline workspace verification issue and the remaining live Nix release gate.

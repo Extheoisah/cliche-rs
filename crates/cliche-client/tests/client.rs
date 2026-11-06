@@ -103,3 +103,76 @@ async fn configuration_is_validated_without_network() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn server_heartbeat_and_last_handle_drop() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let (listener, endpoint) = listener().await;
+    let (pong, pong_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let mut socket = accept(&listener).await;
+        socket
+            .send(Message::Ping(vec![1, 2, 3].into()))
+            .await
+            .unwrap();
+        assert!(
+            matches!(socket.next().await.unwrap().unwrap(), Message::Pong(payload) if payload.as_ref() == [1,2,3])
+        );
+        pong.send(()).unwrap();
+        let _ = socket.next().await;
+    });
+    let client = Client::connect(endpoint).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), pong_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(1), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
+#[tokio::test]
+async fn identity_mismatch_and_message_limits_are_enforced() {
+    let (listener, endpoint) = listener().await;
+    let server = tokio::spawn(async move {
+        let mut socket = accept(&listener).await;
+        let req = request(&mut socket).await;
+        assert_eq!(req["method"], "get-info");
+        respond(&mut socket, &req, json!({"main_pubkey":"wrong"})).await;
+    });
+    assert_eq!(
+        Client::builder(endpoint)
+            .expected_pubkey("expected")
+            .connect()
+            .await
+            .err()
+            .unwrap()
+            .kind,
+        ErrorKind::Protocol
+    );
+    server.await.unwrap();
+    let (listener, endpoint) = common::listener().await;
+    let server = tokio::spawn(async move {
+        let mut socket = accept(&listener).await;
+        let req = request(&mut socket).await;
+        respond(&mut socket, &req, json!({"huge":"x".repeat(2000)})).await;
+    });
+    let client = Client::builder(endpoint)
+        .max_message_size(512)
+        .connect()
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .call("x", json!({"huge":"x".repeat(2000)}))
+            .await
+            .unwrap_err()
+            .execution,
+        Execution::NotSent
+    );
+    assert!(client.call("small", json!({})).await.is_err());
+    client.close().await;
+    server.await.unwrap();
+}

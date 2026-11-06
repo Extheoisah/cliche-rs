@@ -1,7 +1,8 @@
 # Repository guidance
 
-This repository currently contains an implementation plan, not a working client.
-Read `docs/IMPLEMENTATION_PLAN.md` and `docs/PROTOCOL.md` before implementation.
+This repository contains cliche-client and cliche-gateway. Read
+`docs/PROGRESS.md`, the implementation plan, and protocol findings before changes.
+The README and rustdoc describe the implemented API; the plan records the design.
 
 - Keep the default Rust client independent of gRPC, process launching, and Nix.
 - Use WebSocket as the primary command/event transport.
