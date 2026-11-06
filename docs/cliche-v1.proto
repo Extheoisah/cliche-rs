@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package cliche.v1;
+
+// DESIGN DRAFT: review alongside IMPLEMENTATION_PLAN.md before code generation.
+// JSON is carried as UTF-8 strings to preserve integer tokens and unknown fields.
+// gRPC itself remains protobuf over HTTP/2; this is not an HTTP JSON API.
+service ClicheService {
+  rpc Call(CallRequest) returns (JsonDocument);
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream JsonDocument);
+  rpc GetStatus(GetStatusRequest) returns (JsonDocument);
+}
+
+message CallRequest {
+  string method = 1;
+  // Must be a JSON object; empty string is rejected. Use "{}" for no params.
+  string params_json = 2;
+  // Optional application correlation, echoed in JSON. Not an idempotency key.
+  string request_id = 3;
+}
+
+message SubscribeEventsRequest {
+  // Empty means every upstream notification. Bridge status/gap/decode-error
+  // records always bypass filters. Names are exact upstream methods, including unknown future methods.
+  repeated string methods = 1;
+}
+
+message GetStatusRequest {}
+
+message JsonDocument {
+  // Events are serialized from typed Rust enums/structs.
+  // Versioned response/event/status/decode-error envelope specified in IMPLEMENTATION_PLAN.md.
+  string json = 1;
+}

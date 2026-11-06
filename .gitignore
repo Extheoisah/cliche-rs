@@ -1,0 +1,9 @@
+/target/
+.env
+.env.*
+!.env.example
+/result
+/result-*
+/data/
+*.sqlite
+*.sqlite-*
