@@ -79,8 +79,10 @@ registry checksum error (`no hash listed for cliche-client`). Independent gatewa
 packaging also cannot resolve an unpublished client on crates.io. The unpacked
 source check validates the code and included files; a registry publication dry run
 must still be repeated in dependency order after the final crate names and public
-repository/documentation URLs are chosen. No package was published. Reproduce archive/content/compilation checks with
-`python3 scripts/check-packages.py --offline` (Python 3.12+ and protoc required).
+repository/documentation URLs are chosen. No package was published. The temporary
+local-patch packaging helper and its CI step have been removed. Future releases
+should use standard `cargo package` verification and `cargo package --list` content
+inspection, verifying the gateway after its client dependency is published.
 
 ## Implementation refinements from the original design
 

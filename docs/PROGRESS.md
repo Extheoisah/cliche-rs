@@ -32,9 +32,10 @@
    platform jobs, package READMEs/licenses, changelog, baseline and compatibility
    notes. Default, TLS, process and full workspace tests pass locally; Clippy,
    rustdoc and doctests pass with warnings denied. Node mock gRPC roundtrip passes.
-   Archive content checks and unpacked-source compilation pass. Cargo 1.94's
-   offline workspace verifier hit a temporary-registry checksum bug; a repeatable
-   local-patch package checker covers both unpacked crates instead.
+   Initial archive content checks and unpacked-source compilation passed using
+   a local dependency patch after a Cargo offline verifier issue. The temporary
+   packaging helper and its CI step have since been removed; releases should use
+   standard Cargo package verification once dependencies are published.
    Managed Nix/Linux/JAR checks, hosted CI runs, final registry names/repository URLs,
    and publication remain open release gates (COMPATIBILITY.md). Nothing published.
 

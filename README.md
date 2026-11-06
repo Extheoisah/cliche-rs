@@ -141,12 +141,13 @@ to a caller-configured Tonic server; its caller owns transport security.
 ## Release validation
 
 ```sh
-python3 scripts/check-packages.py --offline
+cargo package -p cliche-client
 ```
 
-This assembles both packages, checks archive contents, and compiles unpacked
-sources together without publishing. See the compatibility notes for the Cargo
-1.94 offline workspace verification issue and the remaining managed Nix/Linux release gate.
+Before publishing, inspect package contents with `cargo package --list` and run
+standard Cargo package verification. Package the gateway after its client dependency
+is available on the registry. See the compatibility notes for outstanding release
+gates; package verification is not currently part of CI.
 
 ## Terminal invoice request
 
